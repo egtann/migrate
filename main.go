@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -212,19 +211,10 @@ func migrate(db *sqlx.DB, baseDir, filename string) error {
 	if err != nil {
 		return err
 	}
-	ext := filepath.Ext(filename)
-	switch ext {
-	case ".sql":
-		err = migrateSQL(db, baseDir, filename, byt)
-	case ".go":
-		err = migrateGo(db, baseDir, filename, byt)
-	default:
-		err = migrateShebang(db, baseDir, filename, byt)
-	}
-	if err != nil {
+	if err = migrateSQL(db, baseDir, filename, byt); err != nil {
 		return errors.Wrapf(err, "migrate %s", filename)
 	}
-	checksum, err := computeChecksum(bytes.NewBuffer(byt))
+	checksum, err := computeChecksum(bytes.NewReader(byt))
 	if err != nil {
 		return errors.Wrap(err, "compute file checksum")
 	}
@@ -299,26 +289,6 @@ func migrateSQL(db *sqlx.DB, baseDir, filename string, byt []byte) error {
 	q = `DELETE FROM metacheckpoints`
 	if _, err = db.Exec(q); err != nil {
 		return errors.Wrap(err, "insert meta")
-	}
-	return nil
-}
-
-func migrateGo(db *sqlx.DB, baseDir, filename string, byt []byte) error {
-	pth := filepath.Join(baseDir, filename)
-	out, err := exec.Command("sh", "-c", "go run "+pth).CombinedOutput()
-	if err != nil {
-		log.Println(string(out))
-		return errors.Wrap(err, "go run")
-	}
-	return nil
-}
-
-func migrateShebang(db *sqlx.DB, baseDir, filename string, byt []byte) error {
-	pth := filepath.Join(baseDir, filename)
-	out, err := exec.Command("sh", "-c", pth).CombinedOutput()
-	if err != nil {
-		log.Println(string(out))
-		return errors.Wrap(err, "shebang run")
 	}
 	return nil
 }

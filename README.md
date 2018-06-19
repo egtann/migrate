@@ -18,17 +18,6 @@ migrations in the database itself under a `meta` table. It checks that table
 every run to ensure that no migration was inserted earlier in history and that
 no already-run migration file has changed via its checksum.
 
-`migrate` also takes a different approach to what it considers a migration. Most
-of the time to migrate the database you only need SQL, and `migrate` allows you
-to use standard SQL files. However when business requirements change, a
-database may need to restructure its data without losing any, and SQL may not
-be the best or easiest tool for the job. It's critical to include
-transformation steps like these in the migration history to achieve consistent
-state, so `migrate` allows you to use any program to perform migrations, such as
-go, python, node, or ruby. Simply add a `#!` (shebang) instruction to the top
-of the file to execute. The one exception is any `.go` file, which should not
-include a shebang instruction.
-
 Other tools for database migrations introduced the concept of "up" and "down"
 migrations. There are several drawbacks to that approach, but the biggest by
 far is the following: "down" migrations may incorrectly reverse an "up"
