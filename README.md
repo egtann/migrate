@@ -39,33 +39,6 @@ forward in history, and consistency can always be reached.
 migrate -db my_database -dir db/migrations
 ```
 
-Inside your `db/migrations` directory, you could have the following files:
-
-```
-1_create_users.sql
-2_modify_users.py
-3_update_users.go
-4_create_userpermissions_enum.sql
-```
-
-In `1_create_users.sql` we'd have a normal SQL file.
-
-In `2_modify_users.py` we'd set `#!/usr/bin/python` as the first line.
-
-In `3_update_users.go` we'd have:
-
-```
-package main
-
-func main() {
-	// Your database migration here
-}
-```
-
-In `4_create_userpermissions_enum.sql`, we'd create and populate an enum table
-with serveral `INSERT` statements. It's good practice to populate enum tables
-using migrations, since you'll want consistent enums across environments.
-
 *Note on numbering:* To enforce that no migration is inserted earlier in
 history, `migrate` requires that migration filenames start with ordered
 numbers. This can be `1`, `2`, `3` as above, or it can be a UNIX timestamp or
@@ -77,8 +50,8 @@ Run `migrate -h` for available flags.
 
 First, ensure that all your migration file names are numbered as described
 above. Then run `migrate` with the `-skip` flag. For example, if a project had
-71 migrations that had already been run and another several migrations which
-had not, you'd run:
+70 migrations that had already been run and another several migrations which
+had not (you want to migrate starting at #71), you'd run:
 
 ```
 migrate -db my_database -dir db/migrations -skip 71_the_last_migration_you_ran.sql
