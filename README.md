@@ -36,10 +36,17 @@ forward in history, and consistency can always be reached.
 ## Usage
 
 ```
-migrate -db my_database -dir db/migrations
+$ ls db/migrations
+1_create_users.sql
+2_create_messages.sql
+3_add_user_id_to_messages.sql
+
+$ migrate -db my_database -dir db/migrations
 ```
 
-*Note on numbering:* To enforce that no migration is inserted earlier in
+Each migration must be a plain SQL file that ends with `.sql`.
+
+**Note on numbering:** To enforce that no migration is inserted earlier in
 history, `migrate` requires that migration filenames start with ordered
 numbers. This can be `1`, `2`, `3` as above, or it can be a UNIX timestamp or
 even a formatted timestamp like `YYYYMMDD##`, such as `2018060101`.
@@ -48,10 +55,10 @@ Run `migrate -h` for available flags.
 
 ## How to use migrate with an existing database
 
-First, ensure that all your migration file names are numbered as described
+First, ensure that all your migration filenames are numbered as described
 above. Then run `migrate` with the `-skip` flag. For example, if a project had
 70 migrations that had already been run and another several migrations which
-had not (you want to migrate starting at #71), you'd run:
+had not (that is, you want to migrate starting at #71), you'd run:
 
 ```
 migrate -db my_database -dir db/migrations -skip 71_the_last_migration_you_ran.sql
@@ -60,3 +67,13 @@ migrate -db my_database -dir db/migrations -skip 71_the_last_migration_you_ran.s
 Adding `-skip` will populate the `meta` table with the history to that point,
 and then run all migrations beyond that point. You only need to pass the
 `-skip` flag one time per database.
+
+## Known limitations
+
+The following features are not available yet but will be added:
+
+* **Comments:** Currently there's no support for comments in the migration
+  files.
+* **Other databases:** There's no support for any database other than MySQL.
+  Ultimately `migrate` will be refactored into a library that exposes an
+  interface, making development for arbitrary storage backends straightforward.
