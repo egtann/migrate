@@ -38,10 +38,9 @@ func main() {
 	dbUser := flag.String("u", "root", "database user")
 	dbHost := flag.String("h", "127.0.0.1", "database host")
 	dbPort := flag.Int("p", 3306, "database port")
-	ssl := flag.Bool("ssl", false, "connect to db via ssl")
-	sslKey := flag.String("ssl-key", "deploy/shared/client_key.pem", "path to client key pem")
-	sslCert := flag.String("ssl-cert", "deploy/shared/remote/client_cert.pem", "path to client cert pem")
-	sslCA := flag.String("ssl-ca", "deploy/shared/remote/server_ca.pem", "path to server ca pem")
+	sslKey := flag.String("ssl-key", "", "path to client key pem")
+	sslCert := flag.String("ssl-cert", "", "path to client cert pem")
+	sslCA := flag.String("ssl-ca", "", "path to server ca pem")
 	sslServerName := flag.String("ssl-server", "", "server name for ssl")
 	skip := flag.String("skip", "", "skip up to this filename (inclusive)")
 	pass := flag.String("pass", "", "password (optional flag, if not provided it will be requested)")
@@ -49,6 +48,9 @@ func main() {
 	if len(*dbName) == 0 {
 		log.Fatal("database name cannot be empty. specify using the -db flag. run `migrate -h` for help")
 	}
+
+	// Attempt to use ssl if any ssl flags are defined
+	ssl := *sslKey != "" || *sslCert != "" || *sslCA != "" || *sslServerName != ""
 
 	// Request database password if not provided as a flag argument
 	var password []byte
@@ -67,7 +69,7 @@ func main() {
 	// Connect to the database
 	pth := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true", *dbUser,
 		string(password), *dbHost, *dbPort, *dbName)
-	if *ssl {
+	if ssl {
 		err := registerTLSConfig(*dbName, *sslKey, *sslCert, *sslCA, *sslServerName)
 		if err != nil {
 			log.Fatal(err)
