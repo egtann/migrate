@@ -59,7 +59,7 @@ func main() {
 		var err error
 		password, err = terminal.ReadPassword(int(syscall.Stdin))
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "read pass"))
 		}
 		log.Printf("\n")
 	} else {
@@ -70,30 +70,38 @@ func main() {
 	pth := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true", *dbUser,
 		string(password), *dbHost, *dbPort, *dbName)
 	if ssl {
+		log.Println("using tls")
 		err := registerTLSConfig(*dbName, *sslKey, *sslCert, *sslCA, *sslServerName)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "register tls config"))
 		}
 		pth += "&tls=" + *dbName
 	}
 
 	db, err := sqlx.Open("mysql", pth)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "open db connection"))
 	}
 
 	// Get files in migration dir
 	files := []os.FileInfo{}
 	tmp, err := ioutil.ReadDir(*migrationDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "read dir"))
 	}
 	for _, fi := range tmp {
 		// Skip directories and hidden files
 		if fi.IsDir() || strings.HasPrefix(fi.Name(), ".") {
 			continue
 		}
+		// Skip any non-sql files
+		if filepath.Ext(fi.Name()) != ".sql" {
+			continue
+		}
 		files = append(files, fi)
+	}
+	if len(files) == 0 {
+		log.Fatal("no sql migration files found (might be the wrong -dir)")
 	}
 
 	// Sort the files by name, ensuring that something like 1.sql, 2.sql,
@@ -104,12 +112,12 @@ func main() {
 		fiName2 := regexNum.FindString(files[j].Name())
 		fiNum1, err := strconv.ParseUint(fiName1, 10, 64)
 		if err != nil {
-			err = errors.Wrapf(err, "parse uint in %s", files[i].Name())
+			err = errors.Wrapf(err, "parse uint in file %s", files[i].Name())
 			log.Fatal(err)
 		}
 		fiNum2, err := strconv.ParseUint(fiName2, 10, 64)
 		if err != nil {
-			err = errors.Wrapf(err, "parse uint in %s", files[i].Name())
+			err = errors.Wrapf(err, "parse uint in file %s", files[i].Name())
 			log.Fatal(err)
 		}
 		return fiNum1 < fiNum2
@@ -142,7 +150,7 @@ func main() {
 	if len(*skip) > 0 {
 		index, err = skipAhead(db, files, *migrationDir, *skip)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "skip ahead"))
 		}
 		log.Println("skipped ahead")
 	}
@@ -151,7 +159,13 @@ func main() {
 	migrations := []migration{}
 	q = `SELECT filename, md5 AS checksum FROM meta ORDER BY filename * 1`
 	if err = db.Select(&migrations, q); err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "get meta migrations"))
+	}
+	for i := len(files); i < len(migrations); i++ {
+		log.Printf("missing already-run migration %q\n", files[i])
+	}
+	if len(files) < len(migrations) {
+		log.Fatal("cannot continue with missing migrations")
 	}
 	for i := index; i < len(migrations); i++ {
 		m := migrations[i]
@@ -162,7 +176,7 @@ func main() {
 		}
 		err = checkHash(*migrationDir, m.Filename, m.Checksum)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "check hash"))
 		}
 	}
 
@@ -173,7 +187,7 @@ func main() {
 		filename := files[i].Name()
 		err = migrate(db, *migrationDir, filename)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "migrate"))
 		}
 		log.Println("migrated", filename)
 		migrated = true
