@@ -162,7 +162,7 @@ func main() {
 		log.Fatal(errors.Wrap(err, "get meta migrations"))
 	}
 	for i := len(files); i < len(migrations); i++ {
-		log.Printf("missing already-run migration %q\n", files[i])
+		log.Printf("missing already-run migration %q\n", migrations[i])
 	}
 	if len(files) < len(migrations) {
 		log.Fatal("cannot continue with missing migrations")
