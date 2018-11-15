@@ -120,6 +120,10 @@ func main() {
 			err = errors.Wrapf(err, "parse uint in file %s", files[i].Name())
 			log.Fatal(err)
 		}
+		if fiNum1 == fiNum2 {
+			err = fmt.Errorf("cannot have duplicate timestamp: %d", fiNum1)
+			log.Fatal(err)
+		}
 		return fiNum1 < fiNum2
 	})
 
