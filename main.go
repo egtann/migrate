@@ -366,7 +366,7 @@ func skipAhead(
 	return index, nil
 }
 
-func registerTLSConfig(dbName, certPath, keyPath, caPath, serverName string) error {
+func registerTLSConfig(dbName, keyPath, certPath, caPath, serverName string) error {
 	rootCertPool := x509.NewCertPool()
 	pem, err := ioutil.ReadFile(caPath)
 	if err != nil {
@@ -385,41 +385,6 @@ func registerTLSConfig(dbName, certPath, keyPath, caPath, serverName string) err
 		RootCAs:      rootCertPool,
 		Certificates: clientCert,
 		ServerName:   serverName,
-
-		// We have to provide our own workaround with
-		// VerifyPeerCertificate because Google issues invalid TLS
-		// certs and as of go1.11, Go throws errors. When Google starts
-		// to issue valid TLS certs, we can remove InsecureSkipVerify
-		// and VerifyPeerCertificate.
-		//
-		// https://github.com/golang/go/issues/24151
-		InsecureSkipVerify:    true,
-		VerifyPeerCertificate: verifyPeerCertificate(serverName, rootCertPool),
 	})
 	return errors.Wrap(err, "register tls config")
-}
-
-// verifyPeerCertificate is taken from
-// https://github.com/GoogleCloudPlatform/cloudsql-proxy/pull/196/commits/d7922aa6c06eb5b7109da519d74566a13f214ef8
-func verifyPeerCertificate(
-	instanceName string,
-	pool *x509.CertPool,
-) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-		if len(rawCerts) == 0 {
-			return fmt.Errorf("no certificate to verify")
-		}
-		cert, err := x509.ParseCertificate(rawCerts[0])
-		if err != nil {
-			return fmt.Errorf("x509.ParseCertificate(rawCerts[0]) returned error: %v", err)
-		}
-		opts := x509.VerifyOptions{Roots: pool}
-		if _, err = cert.Verify(opts); err != nil {
-			return err
-		}
-		if cert.Subject.CommonName != instanceName {
-			return fmt.Errorf("certificate had CN %q, expected %q", cert.Subject.CommonName, instanceName)
-		}
-		return nil
-	}
 }
