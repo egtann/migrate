@@ -32,12 +32,18 @@ type migration struct {
 
 func main() {
 	log.SetFlags(0)
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
 
+func run() error {
 	migrationDir := flag.String("dir", ".", "migrations directory")
 	dbName := flag.String("db", "", "database name")
 	dbUser := flag.String("u", "root", "database user")
 	dbHost := flag.String("h", "127.0.0.1", "database host")
 	dbPort := flag.Int("p", 3306, "database port")
+	dry := flag.Bool("d", false, "dry run")
 	sslKey := flag.String("ssl-key", "", "path to client key pem")
 	sslCert := flag.String("ssl-cert", "", "path to client cert pem")
 	sslCA := flag.String("ssl-ca", "", "path to server ca pem")
@@ -46,7 +52,10 @@ func main() {
 	pass := flag.String("pass", "", "password (optional flag, if not provided it will be requested)")
 	flag.Parse()
 	if len(*dbName) == 0 {
-		log.Fatal("database name cannot be empty. specify using the -db flag. run `migrate -h` for help")
+		return errors.New("database name cannot be empty. specify using the -db flag. run `migrate -h` for help")
+	}
+	if *dry && *skip != "" {
+		return errors.New("cannot skip ahead with dry mode")
 	}
 
 	// Attempt to use ssl if any ssl flags are defined
@@ -59,7 +68,7 @@ func main() {
 		var err error
 		password, err = terminal.ReadPassword(int(syscall.Stdin))
 		if err != nil {
-			log.Fatal(errors.Wrap(err, "read pass"))
+			return errors.Wrap(err, "read pass")
 		}
 		log.Printf("\n")
 	} else {
@@ -73,21 +82,20 @@ func main() {
 		log.Println("using tls")
 		err := registerTLSConfig(*dbName, *sslKey, *sslCert, *sslCA, *sslServerName)
 		if err != nil {
-			log.Fatal(errors.Wrap(err, "register tls config"))
+			return errors.Wrap(err, "register tls config")
 		}
 		pth += "&tls=" + *dbName
 	}
-
 	db, err := sqlx.Open("mysql", pth)
 	if err != nil {
-		log.Fatal(errors.Wrap(err, "open db connection"))
+		return errors.Wrap(err, "open db connection")
 	}
 
 	// Get files in migration dir
 	files := []os.FileInfo{}
 	tmp, err := ioutil.ReadDir(*migrationDir)
 	if err != nil {
-		log.Fatal(errors.Wrap(err, "read dir"))
+		return errors.Wrap(err, "read dir")
 	}
 	for _, fi := range tmp {
 		// Skip directories and hidden files
@@ -101,31 +109,38 @@ func main() {
 		files = append(files, fi)
 	}
 	if len(files) == 0 {
-		log.Fatal("no sql migration files found (might be the wrong -dir)")
+		return errors.New("no sql migration files found (might be the wrong -dir)")
 	}
 
 	// Sort the files by name, ensuring that something like 1.sql, 2.sql,
 	// 10.sql is correct
 	regexNum := regexp.MustCompile(`^\d+`)
+	var nameErr error
 	sort.Slice(files, func(i, j int) bool {
+		if nameErr != nil {
+			return false
+		}
 		fiName1 := regexNum.FindString(files[i].Name())
 		fiName2 := regexNum.FindString(files[j].Name())
 		fiNum1, err := strconv.ParseUint(fiName1, 10, 64)
 		if err != nil {
-			err = errors.Wrapf(err, "parse uint in file %s", files[i].Name())
-			log.Fatal(err)
+			nameErr = errors.Wrapf(err, "parse uint in file %s", files[i].Name())
+			return false
 		}
 		fiNum2, err := strconv.ParseUint(fiName2, 10, 64)
 		if err != nil {
-			err = errors.Wrapf(err, "parse uint in file %s", files[i].Name())
-			log.Fatal(err)
+			nameErr = errors.Wrapf(err, "parse uint in file %s", files[i].Name())
+			return false
 		}
 		if fiNum1 == fiNum2 {
-			err = fmt.Errorf("cannot have duplicate timestamp: %d", fiNum1)
-			log.Fatal(err)
+			nameErr = fmt.Errorf("cannot have duplicate timestamp: %d", fiNum1)
+			return false
 		}
 		return fiNum1 < fiNum2
 	})
+	if nameErr != nil {
+		return err
+	}
 
 	// Create meta tables if we need to, so we can store the migration
 	// state in the db itself
@@ -135,7 +150,7 @@ func main() {
 		createdat DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 	)`
 	if _, err = db.Exec(q); err != nil {
-		log.Fatal(errors.Wrap(err, "create meta table"))
+		return errors.Wrap(err, "create meta table")
 	}
 	q = `CREATE TABLE IF NOT EXISTS metacheckpoints (
 		filename VARCHAR(255) NOT NULL,
@@ -145,7 +160,7 @@ func main() {
 		PRIMARY KEY (filename, idx)
 	)`
 	if _, err = db.Exec(q); err != nil {
-		log.Fatal(errors.Wrap(err, "create metacheckpoints table"))
+		return errors.Wrap(err, "create metacheckpoints table")
 	}
 
 	// If skip, then we record the migrations but do not perform them. This
@@ -154,7 +169,7 @@ func main() {
 	if len(*skip) > 0 {
 		index, err = skipAhead(db, files, *migrationDir, *skip)
 		if err != nil {
-			log.Fatal(errors.Wrap(err, "skip ahead"))
+			return errors.Wrap(err, "skip ahead")
 		}
 		log.Println("skipped ahead")
 	}
@@ -163,25 +178,35 @@ func main() {
 	migrations := []migration{}
 	q = `SELECT filename, md5 AS checksum FROM meta ORDER BY filename * 1`
 	if err = db.Select(&migrations, q); err != nil {
-		log.Fatal(errors.Wrap(err, "get meta migrations"))
+		return errors.Wrap(err, "get meta migrations")
 	}
 	for i := len(files); i < len(migrations); i++ {
 		log.Printf("missing already-run migration %q\n", migrations[i])
 	}
 	if len(files) < len(migrations) {
-		log.Fatal("cannot continue with missing migrations")
+		return errors.New("cannot continue with missing migrations")
 	}
 	for i := index; i < len(migrations); i++ {
 		m := migrations[i]
 		if m.Filename != files[i].Name() {
 			log.Printf("\n%s was added to history before %s.",
 				files[i].Name(), m.Filename)
-			log.Fatal("failed to migrate. migrations must be appended")
+			return errors.New("failed to migrate. migrations must be appended")
 		}
 		err = checkHash(*migrationDir, m.Filename, m.Checksum)
 		if err != nil {
-			log.Fatal(errors.Wrap(err, "check hash"))
+			return errors.Wrap(err, "check hash")
 		}
+	}
+	if *dry {
+		if len(migrations) == len(files) {
+			log.Println("up to date")
+			return nil
+		}
+		for i := len(migrations); i < len(files); i++ {
+			log.Println("would migrate", files[i].Name())
+		}
+		return nil
 	}
 
 	// Check for any files in the directory beyond what we see in the
@@ -191,7 +216,7 @@ func main() {
 		filename := files[i].Name()
 		err = migrate(db, *migrationDir, filename)
 		if err != nil {
-			log.Fatal(errors.Wrap(err, "migrate"))
+			return errors.Wrap(err, "migrate")
 		}
 		log.Println("migrated", filename)
 		migrated = true
@@ -199,13 +224,14 @@ func main() {
 	q = `DROP TABLE metacheckpoints`
 	_, err = db.Exec(q)
 	if err != nil {
-		log.Fatal(errors.Wrap(err, "drop metacheckpoints table"))
+		return errors.Wrap(err, "drop metacheckpoints table")
 	}
 	if migrated {
 		log.Println("success")
 	} else {
 		log.Println("up to date")
 	}
+	return nil
 }
 
 func checkHash(baseDir, filename, checksum string) error {
@@ -338,7 +364,7 @@ func skipAhead(
 		}
 	}
 	if index == -1 {
-		log.Fatalf("%s does not exist", skipToFile)
+		return 0, fmt.Errorf("%s does not exist", skipToFile)
 	}
 	const q = `
 		INSERT INTO meta (filename, md5) VALUES (?, ?)
