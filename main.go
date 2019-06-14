@@ -33,7 +33,8 @@ type migration struct {
 func main() {
 	log.SetFlags(0)
 	if err := run(); err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -70,7 +71,7 @@ func run() error {
 		if err != nil {
 			return errors.Wrap(err, "read pass")
 		}
-		log.Printf("\n")
+		fmt.Printf("\n")
 	} else {
 		password = []byte(*pass)
 	}
@@ -79,7 +80,7 @@ func run() error {
 	pth := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true", *dbUser,
 		string(password), *dbHost, *dbPort, *dbName)
 	if ssl {
-		log.Println("using tls")
+		fmt.Println("using tls")
 		err := registerTLSConfig(*dbName, *sslKey, *sslCert, *sslCA, *sslServerName)
 		if err != nil {
 			return errors.Wrap(err, "register tls config")
@@ -171,7 +172,7 @@ func run() error {
 		if err != nil {
 			return errors.Wrap(err, "skip ahead")
 		}
-		log.Println("skipped ahead")
+		fmt.Println("skipped ahead")
 	}
 
 	// Get all migrations
@@ -181,7 +182,7 @@ func run() error {
 		return errors.Wrap(err, "get meta migrations")
 	}
 	for i := len(files); i < len(migrations); i++ {
-		log.Printf("missing already-run migration %q\n", migrations[i])
+		fmt.Printf("missing already-run migration %q\n", migrations[i])
 	}
 	if len(files) < len(migrations) {
 		return errors.New("cannot continue with missing migrations")
@@ -189,7 +190,7 @@ func run() error {
 	for i := index; i < len(migrations); i++ {
 		m := migrations[i]
 		if m.Filename != files[i].Name() {
-			log.Printf("\n%s was added to history before %s.",
+			fmt.Printf("\n%s was added to history before %s.",
 				files[i].Name(), m.Filename)
 			return errors.New("failed to migrate. migrations must be appended")
 		}
@@ -200,11 +201,11 @@ func run() error {
 	}
 	if *dry {
 		if len(migrations) == len(files) {
-			log.Println("up to date")
+			fmt.Println("up to date")
 			return nil
 		}
 		for i := len(migrations); i < len(files); i++ {
-			log.Println("would migrate", files[i].Name())
+			fmt.Println("would migrate", files[i].Name())
 		}
 		return nil
 	}
@@ -218,7 +219,7 @@ func run() error {
 		if err != nil {
 			return errors.Wrap(err, "migrate")
 		}
-		log.Println("migrated", filename)
+		fmt.Println("migrated", filename)
 		migrated = true
 	}
 	q = `DROP TABLE metacheckpoints`
@@ -227,9 +228,9 @@ func run() error {
 		return errors.Wrap(err, "drop metacheckpoints table")
 	}
 	if migrated {
-		log.Println("success")
+		fmt.Println("success")
 	} else {
-		log.Println("up to date")
+		fmt.Println("up to date")
 	}
 	return nil
 }
@@ -245,7 +246,7 @@ func checkHash(baseDir, filename, checksum string) error {
 		return err
 	}
 	if check != checksum {
-		log.Println("comparing", check, checksum)
+		fmt.Println("comparing", check, checksum)
 		return fmt.Errorf("checksum does not match %s. has the file changed?", filename)
 	}
 	return nil
@@ -287,7 +288,7 @@ func migrateSQL(db *sqlx.DB, baseDir, filename string, byt []byte) error {
 		return errors.Wrap(err, "get metacheckpoints")
 	}
 	if len(checkpoints) > 0 {
-		log.Printf("found %d checkpoints\n", len(checkpoints))
+		fmt.Printf("found %d checkpoints\n", len(checkpoints))
 	}
 
 	// Ensure commands weren't deleted from the file after we migrated them
@@ -314,7 +315,7 @@ func migrateSQL(db *sqlx.DB, baseDir, filename string, byt []byte) error {
 		// Execute non-checkpointed commands one by one
 		_, err := db.Exec(cmd)
 		if err != nil {
-			log.Println("failed on", cmd)
+			fmt.Println("failed on", cmd)
 			return fmt.Errorf("%s: %s", filename, err)
 		}
 
