@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -31,7 +30,6 @@ type migration struct {
 }
 
 func main() {
-	log.SetFlags(0)
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -140,7 +138,7 @@ func run() error {
 		return fiNum1 < fiNum2
 	})
 	if nameErr != nil {
-		return err
+		return nameErr
 	}
 
 	// Create meta tables if we need to, so we can store the migration
