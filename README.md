@@ -1,8 +1,7 @@
 # migrate
 
-`migrate` is a database migration tool for MySQL. It's a new take on database
-migrations, designed to satisfy the needs of real projects without the
-drawbacks of other designs.
+`migrate` is a database migration tool that currently works across MySQL,
+Postgres, and sqlite3.
 
 `migrate` ensures your database reaches consistent state in any environment.
 Unlike most database migration tools, `migrate` enforces two key concepts:
@@ -20,9 +19,9 @@ no already-run migration file has changed via its checksum.
 
 Other tools for database migrations introduced the concept of "up" and "down"
 migrations. There are several drawbacks to that approach, but the biggest by
-far is the following: "down" migrations may incorrectly reverse an "up"
-migration due to programmer error, leaving the database in an inconsistent
-state across environments.
+far is that "down" migrations may incorrectly reverse an "up" migration due to
+programmer error, leaving the database in an inconsistent state across
+environments.
 
 Thus, "down" migrations compromise the entire point of any migration tool,
 which is above all else to guarantee consistent state. At the same time, it's
@@ -32,6 +31,12 @@ migration to be performed as another explicit step in the database's history.
 Thus, `migrate` eliminates the concept of directional migrations altogether. With
 `migrate`, every migration is an "up" migration -- every migration moves you
 forward in history, and consistency can always be reached.
+
+## Install
+
+```
+go get github.com/egtann/migrate/cmd/migrate
+```
 
 ## Usage
 
@@ -72,8 +77,5 @@ and then run all migrations beyond that point. You only need to pass the
 
 The following features are not available yet but will be added:
 
-* **Comments:** Currently there's no support for comments in the migration
-  files.
-* **Other databases:** There's no support for any database other than MySQL.
-  Ultimately `migrate` will be refactored into a library that exposes an
-  interface, making development for arbitrary storage backends straightforward.
+* **Comments:** Currently there's minimal support for comments in the migration
+  files. Comments must be at the start of lines.
