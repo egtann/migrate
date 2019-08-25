@@ -17,12 +17,13 @@ import (
 )
 
 type Migrate struct {
-	DB         Store
-	Log        Logger
 	Migrations []Migration
 	Files      []os.FileInfo
-	Dir        string
-	Idx        int
+
+	db  Store
+	log Logger
+	dir string
+	idx int
 }
 
 type Migration struct {
@@ -33,15 +34,15 @@ type Migration struct {
 var regexNum = regexp.MustCompile(`^\d+`)
 
 func New(db Store, log Logger, dir, skip string) (*Migrate, error) {
-	m := &Migrate{DB: db, Log: log, Dir: dir}
+	m := &Migrate{db: db, log: log, dir: dir}
 
 	// Get files in migration dir and sort them
 	var err error
-	m.Files, err = readDir(dir)
+	m.Files, err = readdir(dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "get migrations")
 	}
-	if err = sortFiles(m.Files); err != nil {
+	if err = sortfiles(m.Files); err != nil {
 		return nil, errors.Wrap(err, "sort")
 	}
 
@@ -57,11 +58,11 @@ func New(db Store, log Logger, dir, skip string) (*Migrate, error) {
 	// If skip, then we record the migrations but do not perform them. This
 	// enables you to start using this package on an existing database
 	if skip != "" {
-		m.Idx, err = m.skip(skip)
+		m.idx, err = m.skip(skip)
 		if err != nil {
 			return nil, errors.Wrap(err, "skip ahead")
 		}
-		m.Log.Println("skipped ahead")
+		m.log.Println("skipped ahead")
 	}
 
 	// Get all migrations
@@ -84,7 +85,7 @@ func (m *Migrate) Migrate() (bool, error) {
 		if err := m.migrateFile(filename); err != nil {
 			return false, errors.Wrap(err, "migrate file")
 		}
-		m.Log.Println("migrated", filename)
+		m.log.Println("migrated", filename)
 		migrated = true
 	}
 	return migrated, nil
@@ -92,15 +93,15 @@ func (m *Migrate) Migrate() (bool, error) {
 
 func (m *Migrate) validHistory() error {
 	for i := len(m.Files); i < len(m.Migrations); i++ {
-		m.Log.Printf("missing already-run migration %q\n", m.Migrations[i])
+		m.log.Printf("missing already-run migration %q\n", m.Migrations[i])
 	}
 	if len(m.Files) < len(m.Migrations) {
 		return errors.New("cannot continue with missing migrations")
 	}
-	for i := m.Idx; i < len(m.Migrations); i++ {
+	for i := m.idx; i < len(m.Migrations); i++ {
 		mg := m.Migrations[i]
 		if mg.Filename != m.Files[i].Name() {
-			m.Log.Printf("\n%s was added to history before %s.",
+			m.log.Printf("\n%s was added to history before %s.",
 				m.Files[i].Name(), mg.Filename)
 			return errors.New("failed to migrate. migrations must be appended")
 		}
@@ -112,7 +113,7 @@ func (m *Migrate) validHistory() error {
 }
 
 func (m *Migrate) checkHash(mg Migration) error {
-	fi, err := os.Open(filepath.Join(m.Dir, mg.Filename))
+	fi, err := os.Open(filepath.Join(m.dir, mg.Filename))
 	if err != nil {
 		return err
 	}
@@ -122,7 +123,7 @@ func (m *Migrate) checkHash(mg Migration) error {
 		return err
 	}
 	if check != mg.Checksum {
-		m.Log.Println("comparing", check, mg.Checksum)
+		m.log.Println("comparing", check, mg.Checksum)
 		return fmt.Errorf("checksum does not match %s. has the file changed?",
 			mg.Filename)
 	}
@@ -130,7 +131,7 @@ func (m *Migrate) checkHash(mg Migration) error {
 }
 
 func (m *Migrate) migrateFile(filename string) error {
-	pth := filepath.Join(m.Dir, filename)
+	pth := filepath.Join(m.dir, filename)
 	byt, err := ioutil.ReadFile(pth)
 	if err != nil {
 		return err
@@ -147,12 +148,12 @@ func (m *Migrate) migrateFile(filename string) error {
 	}
 
 	// Get our checkpoints, if any
-	checkpoints, err := m.DB.GetMetaCheckpoints(filename)
+	checkpoints, err := m.db.GetMetaCheckpoints(filename)
 	if err != nil {
 		return errors.Wrap(err, "get checkpoints")
 	}
 	if len(checkpoints) > 0 {
-		m.Log.Printf("found %d checkpoints\n", len(checkpoints))
+		m.log.Printf("found %d checkpoints\n", len(checkpoints))
 	}
 
 	// Ensure commands weren't deleted from the file after we migrated them
@@ -178,9 +179,9 @@ func (m *Migrate) migrateFile(filename string) error {
 		}
 
 		// Execute non-checkpointed commands one by one
-		_, err := m.DB.Exec(cmd)
+		_, err := m.db.Exec(cmd)
 		if err != nil {
-			m.Log.Println("failed on", cmd)
+			m.log.Println("failed on", cmd)
 			return fmt.Errorf("%s: %s", filename, err)
 		}
 
@@ -189,7 +190,7 @@ func (m *Migrate) migrateFile(filename string) error {
 		if err != nil {
 			return errors.Wrap(err, "compute checksum")
 		}
-		err = m.DB.InsertMetaCheckpoint(filename, checksum, i)
+		err = m.db.InsertMetaCheckpoint(filename, checksum, i)
 		if err != nil {
 			return errors.Wrap(err, "insert checkpoint")
 		}
@@ -197,7 +198,7 @@ func (m *Migrate) migrateFile(filename string) error {
 
 	// We've successfully finished migrating the file, so we delete the
 	// temporary progress in metacheckpoints and save the migration
-	if err = m.DB.DeleteMetaCheckpoints(); err != nil {
+	if err = m.db.DeleteMetaCheckpoints(); err != nil {
 		return errors.Wrap(err, "delete checkpoints")
 	}
 
@@ -205,7 +206,7 @@ func (m *Migrate) migrateFile(filename string) error {
 	if err != nil {
 		return errors.Wrap(err, "compute file checksum")
 	}
-	if err = m.DB.InsertMigration(filename, checksum); err != nil {
+	if err = m.db.InsertMigration(filename, checksum); err != nil {
 		return errors.Wrap(err, "insert migration")
 	}
 	return nil
@@ -228,7 +229,7 @@ func (m *Migrate) skip(toFile string) (int, error) {
 	}
 	for i := 0; i <= index; i++ {
 		name := m.Files[i].Name()
-		fi, err := os.Open(filepath.Join(m.Dir, name))
+		fi, err := os.Open(filepath.Join(m.dir, name))
 		if err != nil {
 			return -1, err
 		}
@@ -237,7 +238,7 @@ func (m *Migrate) skip(toFile string) (int, error) {
 			fi.Close()
 			return -1, err
 		}
-		if err = m.DB.UpsertMigration(name, checksum); err != nil {
+		if err = m.db.UpsertMigration(name, checksum); err != nil {
 			fi.Close()
 			return -1, err
 		}
@@ -256,8 +257,8 @@ func computeChecksum(r io.Reader) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// readDir collects file infos from the migration directory.
-func readDir(dir string) ([]os.FileInfo, error) {
+// readdir collects file infos from the migration directory.
+func readdir(dir string) ([]os.FileInfo, error) {
 	files := []os.FileInfo{}
 	tmp, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -280,9 +281,9 @@ func readDir(dir string) ([]os.FileInfo, error) {
 	return files, nil
 }
 
-// sortFiles by name, ensuring that something like 1.sql, 2.sql, 10.sql is
+// sortfiles by name, ensuring that something like 1.sql, 2.sql, 10.sql is
 // ordered correctly.
-func sortFiles(files []os.FileInfo) error {
+func sortfiles(files []os.FileInfo) error {
 	var nameErr error
 	sort.Slice(files, func(i, j int) bool {
 		if nameErr != nil {

@@ -79,6 +79,8 @@ func run() error {
 		if *dbPort == 0 {
 			*dbPort = 3306
 		}
+	default:
+		return fmt.Errorf("unknown db type %s (mysql, postgres, sqlite allowed)")
 	}
 
 	// Request database password if not provided as a flag argument
