@@ -29,7 +29,7 @@ func New(
 	db.connURL = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true", user,
 		pass, host, port, dbName)
 	if sslKey != "" {
-		db.connURL += "&tls=true"
+		db.connURL = fmt.Sprintf("%s&tls=%s", db.connURL, sslServerName)
 		var err error
 		db.tlsConfig, err = newTLSConfig(dbName, sslKey,
 			sslCert, sslCA, sslServerName)
@@ -111,7 +111,7 @@ func (db *DB) DeleteMetaCheckpoints() error {
 
 func (db *DB) Open() error {
 	if db.tlsConfig != nil {
-		err := mysql.RegisterTLSConfig(db.tlsConfig.DBName,
+		err := mysql.RegisterTLSConfig(db.tlsConfig.ServerName,
 			db.tlsConfig.Config)
 		if err != nil {
 			return errors.Wrap(err, "register tls config")
@@ -126,8 +126,8 @@ func (db *DB) Open() error {
 }
 
 type tlsConfig struct {
-	DBName string
-	Config *tls.Config
+	ServerName string
+	Config     *tls.Config
 }
 
 func newTLSConfig(
@@ -147,7 +147,7 @@ func newTLSConfig(
 	}
 	clientCert := []tls.Certificate{certs}
 	conf := &tlsConfig{
-		DBName: dbName,
+		ServerName: serverName,
 		Config: &tls.Config{
 			RootCAs:      rootCertPool,
 			Certificates: clientCert,
