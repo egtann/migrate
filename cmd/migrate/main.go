@@ -36,6 +36,21 @@ func run() error {
 	skip := flag.String("skip", "", "skip up to this filename (inclusive)")
 	pass := flag.String("pass", "", "password (optional flag, if not provided it will be requested)")
 	flag.Parse()
+
+	// Restrict this program to specific files (read-only) and greatly
+	// restrict its possible syscalls
+	paths := []string{*migrationDir}
+	if *sslKey != "" {
+		paths = append(paths, *sslKey, *sslCert, *sslCA)
+		fmt.Println(paths)
+	}
+	if err := migrate.Unveil(paths); err != nil {
+		return errors.Wrap(err, "unveil")
+	}
+	if err := migrate.Pledge(); err != nil {
+		return errors.Wrap(err, "pledge")
+	}
+
 	if len(*dbName) == 0 {
 		return errors.New("database name cannot be empty. specify using the -db flag. run `migrate -h` for help")
 	}
