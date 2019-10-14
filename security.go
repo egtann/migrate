@@ -6,4 +6,4 @@ package migrate
 func Pledge() error { return nil }
 
 // Unveil is only supported on OpenBSD.
-func Unveil(dir string) error { return nil }
+func Unveil(paths []string) error { return nil }
