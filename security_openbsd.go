@@ -7,7 +7,7 @@ import (
 
 // Pledge to the kernel the required syscalls on OpenBSD.
 func Pledge() error {
-	const promises = "stdio rpath inet"
+	const promises = "stdio rpath inet tty"
 	if err := unix.Pledge(promises, ""); err != nil {
 		return err
 	}
