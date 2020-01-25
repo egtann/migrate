@@ -147,6 +147,11 @@ func (m *Migrate) migrateFile(filename string) error {
 		}
 	}
 
+	// Ensure that commands are present
+	if len(filteredCmds) == 0 {
+		return fmt.Errorf("no sql statements in file: %s", filename)
+	}
+
 	// Get our checkpoints, if any
 	checkpoints, err := m.db.GetMetaCheckpoints(filename)
 	if err != nil {
