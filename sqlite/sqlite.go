@@ -22,7 +22,7 @@ func New(dbFile string) *DB {
 func (db *DB) CreateMetaIfNotExists() error {
 	q := `CREATE TABLE IF NOT EXISTS meta (
 		filename TEXT UNIQUE NOT NULL,
-		md5 TEXT UNIQUE NOT NULL,
+		md5 TEXT NOT NULL,
 		createdat TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`
 	if _, err := db.Exec(q); err != nil {

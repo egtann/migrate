@@ -43,7 +43,7 @@ func New(
 func (db *DB) CreateMetaIfNotExists() error {
 	q := `CREATE TABLE IF NOT EXISTS meta (
 		filename VARCHAR(255) UNIQUE NOT NULL,
-		md5 VARCHAR(255) UNIQUE NOT NULL,
+		md5 VARCHAR(255) NOT NULL,
 		createdat DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 	)`
 	if _, err := db.Exec(q); err != nil {
