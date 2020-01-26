@@ -3,6 +3,7 @@ package mysql
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 
@@ -40,10 +41,31 @@ func New(
 	return db, nil
 }
 
+func (db *DB) CreateMetaVersionIfNotExists() (int, error) {
+	q := `CREATE TABLE IF NOT EXISTS metaversion (
+		version INTEGER NOT NULL
+	)`
+	if _, err := db.Exec(q); err != nil {
+		return 0, errors.Wrap(err, "create metaversion table")
+	}
+
+	var version int
+	q = `SELECT version FROM metaversion`
+	err := db.Get(&version, q)
+	switch {
+	case err == sql.ErrNoRows:
+		return 0, nil
+	case err != nil:
+		return 0, errors.Wrap(err, "get version")
+	}
+	return version, nil
+}
+
 func (db *DB) CreateMetaIfNotExists() error {
 	q := `CREATE TABLE IF NOT EXISTS meta (
 		filename VARCHAR(255) UNIQUE NOT NULL,
 		md5 VARCHAR(255) NOT NULL,
+		content TEXT NOT NULL,
 		createdat DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 	)`
 	if _, err := db.Exec(q); err != nil {
@@ -57,6 +79,7 @@ func (db *DB) CreateMetaCheckpointsIfNotExists() error {
 		filename VARCHAR(255) NOT NULL,
 		idx INTEGER NOT NULL,
 		md5 VARCHAR(255) NOT NULL,
+		content TEXT NOT NULL,
 		createdat DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 		PRIMARY KEY (filename, idx)
 	)`
@@ -68,7 +91,10 @@ func (db *DB) CreateMetaCheckpointsIfNotExists() error {
 
 func (db *DB) GetMigrations() ([]migrate.Migration, error) {
 	migrations := []migrate.Migration{}
-	q := `SELECT filename, md5 AS checksum FROM meta ORDER BY filename * 1`
+	q := `
+	SELECT filename, content, md5 AS checksum
+	FROM meta
+	ORDER BY filename * 1`
 	err := db.Select(&migrations, q)
 	return migrations, err
 
@@ -81,25 +107,28 @@ func (db *DB) GetMetaCheckpoints(filename string) ([]string, error) {
 	return checkpoints, err
 }
 
-func (db *DB) UpsertMigration(filename, checksum string) error {
+func (db *DB) UpsertMigration(filename, content, checksum string) error {
 	q := `
-		INSERT INTO meta (filename, md5) VALUES (?, ?)
-		ON DUPLICATE KEY UPDATE md5=?`
-	_, err := db.Exec(q, filename, checksum, checksum)
+		INSERT INTO meta (filename, content, md5) VALUES (?, ?, ?)
+		ON DUPLICATE KEY UPDATE md5=?, content=?`
+	_, err := db.Exec(q, filename, content, checksum, checksum, content)
 	return err
 }
 
-func (db *DB) InsertMetaCheckpoint(filename, checksum string, idx int) error {
+func (db *DB) InsertMetaCheckpoint(
+	filename, content, checksum string,
+	idx int,
+) error {
 	q := `
-		INSERT INTO metacheckpoints (filename, idx, md5)
-		VALUES (?, ?, ?)`
-	_, err := db.Exec(q, filename, idx, checksum)
+		INSERT INTO metacheckpoints (filename, content, idx, md5)
+		VALUES (?, ?, ?, ?)`
+	_, err := db.Exec(q, filename, content, idx, checksum)
 	return err
 }
 
-func (db *DB) InsertMigration(filename, checksum string) error {
-	q := `INSERT INTO meta (filename, md5) VALUES (?, ?)`
-	_, err := db.Exec(q, filename, checksum)
+func (db *DB) InsertMigration(filename, content, checksum string) error {
+	q := `INSERT INTO meta (filename, content, md5) VALUES (?, ?, ?)`
+	_, err := db.Exec(q, filename, content, checksum)
 	return err
 }
 
@@ -107,6 +136,78 @@ func (db *DB) DeleteMetaCheckpoints() error {
 	q := `DELETE FROM metacheckpoints`
 	_, err := db.Exec(q)
 	return err
+}
+
+// UpgradeToV1 migrates existing meta tables to the v1 format. Complete any
+// migrations before running this function; this will not succeed if have any
+// existing metacheckpoints.
+func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
+	// Begin Tx
+	tx, err := db.Beginx()
+	if err != nil {
+		return errors.Wrap(err, "begin tx")
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+
+	// Remove the uniqueness constraint from md5
+	q := `ALTER TABLE meta DROP CONSTRAINT md5`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "remove md5 unique")
+		return
+	}
+
+	// Add a content column to record the exact migration that ran
+	// alongside the md5, insert the appropriate data, then set not null
+	q = `ALTER TABLE meta ADD COLUMN content TEXT`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "add content column")
+		return
+	}
+	for _, m := range migrations {
+		q = `UPDATE meta SET content=? WHERE filename=?`
+		if _, err = tx.Exec(q, m.Content, m.Filename); err != nil {
+			err = errors.Wrap(err, "update meta content")
+			return
+		}
+	}
+	q = `ALTER TABLE meta MODIFY COLUMN content TEXT NOT NULL`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "update meta content not null")
+		return
+	}
+
+	// Add the content column to metacheckpoints
+	q = `
+	ALTER TABLE metacheckpoints
+	ADD COLUMN IF NOT EXISTS content TEXT NOT NULL`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "add metacheckpoints content")
+		return
+	}
+
+	q = `
+	CREATE TABLE IF NOT EXISTS metaversion (version INTEGER NOT NULL)`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "create metaversion table")
+		return
+	}
+	q = `DELETE FROM metaversion`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "delete metaversion")
+		return
+	}
+	q = `INSERT INTO metaversion (version) VALUES (1)`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "insert metaversion")
+		return
+	}
+	return nil
 }
 
 func (db *DB) Open() error {

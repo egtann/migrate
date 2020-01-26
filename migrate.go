@@ -16,6 +16,9 @@ import (
 	"github.com/pkg/errors"
 )
 
+// version of the migrate tool's database schema.
+const version = 1
+
 type Migrate struct {
 	Migrations []Migration
 	Files      []os.FileInfo
@@ -29,11 +32,16 @@ type Migrate struct {
 type Migration struct {
 	Filename string
 	Checksum string
+	Content  string
 }
 
 var regexNum = regexp.MustCompile(`^\d+`)
 
-func New(db Store, log Logger, dir, skip string) (*Migrate, error) {
+func New(
+	db Store,
+	log Logger,
+	dir, skip string,
+) (*Migrate, error) {
 	m := &Migrate{db: db, log: log, dir: dir}
 
 	// Get files in migration dir and sort them
@@ -54,6 +62,25 @@ func New(db Store, log Logger, dir, skip string) (*Migrate, error) {
 	if err = db.CreateMetaCheckpointsIfNotExists(); err != nil {
 		return nil, errors.Wrap(err, "create meta checkpoints table")
 	}
+	curVersion, err := db.CreateMetaVersionIfNotExists()
+	if err != nil {
+		return nil, errors.Wrap(err, "create meta version table")
+	}
+
+	// Migrate the database schema to match the tool's expectations
+	// automatically
+	if curVersion > version {
+		return nil, errors.New("must upgrade migrate: go get -u github.com/egtann/migrate")
+	}
+	if curVersion < 1 {
+		tmpMigrations, err := migrationsFromFiles(m)
+		if err != nil {
+			return nil, errors.Wrap(err, "migrations from files")
+		}
+		if err = db.UpgradeToV1(tmpMigrations); err != nil {
+			return nil, errors.Wrap(err, "upgrade to v1")
+		}
+	}
 
 	// If skip, then we record the migrations but do not perform them. This
 	// enables you to start using this package on an existing database
@@ -70,6 +97,7 @@ func New(db Store, log Logger, dir, skip string) (*Migrate, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "get migrations")
 	}
+
 	if err = m.validHistory(); err != nil {
 		return nil, err
 	}
@@ -118,7 +146,7 @@ func (m *Migrate) checkHash(mg Migration) error {
 		return err
 	}
 	defer fi.Close()
-	check, err := computeChecksum(fi)
+	_, check, err := computeChecksum(fi)
 	if err != nil {
 		return err
 	}
@@ -171,7 +199,7 @@ func (m *Migrate) migrateFile(filename string) error {
 		// Confirm the file up to our checkpoint has not changed
 		if i < len(checkpoints) {
 			r := strings.NewReader(cmd)
-			checksum, err := computeChecksum(r)
+			_, checksum, err := computeChecksum(r)
 			if err != nil {
 				return errors.Wrap(err, "compute checkpoint checksum")
 			}
@@ -191,11 +219,11 @@ func (m *Migrate) migrateFile(filename string) error {
 		}
 
 		// Save a checkpoint
-		checksum, err := computeChecksum(strings.NewReader(cmd))
+		_, checksum, err := computeChecksum(strings.NewReader(cmd))
 		if err != nil {
 			return errors.Wrap(err, "compute checksum")
 		}
-		err = m.db.InsertMetaCheckpoint(filename, checksum, i)
+		err = m.db.InsertMetaCheckpoint(filename, cmd, checksum, i)
 		if err != nil {
 			return errors.Wrap(err, "insert checkpoint")
 		}
@@ -207,11 +235,11 @@ func (m *Migrate) migrateFile(filename string) error {
 		return errors.Wrap(err, "delete checkpoints")
 	}
 
-	checksum, err := computeChecksum(bytes.NewReader(byt))
+	_, checksum, err := computeChecksum(bytes.NewReader(byt))
 	if err != nil {
 		return errors.Wrap(err, "compute file checksum")
 	}
-	if err = m.db.InsertMigration(filename, checksum); err != nil {
+	if err = m.db.InsertMigration(filename, string(byt), checksum); err != nil {
 		return errors.Wrap(err, "insert migration")
 	}
 	return nil
@@ -238,12 +266,12 @@ func (m *Migrate) skip(toFile string) (int, error) {
 		if err != nil {
 			return -1, err
 		}
-		checksum, err := computeChecksum(fi)
+		content, checksum, err := computeChecksum(fi)
 		if err != nil {
 			fi.Close()
 			return -1, err
 		}
-		if err = m.db.UpsertMigration(name, checksum); err != nil {
+		if err = m.db.UpsertMigration(name, content, checksum); err != nil {
 			fi.Close()
 			return -1, err
 		}
@@ -254,12 +282,16 @@ func (m *Migrate) skip(toFile string) (int, error) {
 	return index, nil
 }
 
-func computeChecksum(r io.Reader) (string, error) {
+func computeChecksum(r io.Reader) (content string, checksum string, err error) {
 	h := md5.New()
-	if _, err := io.Copy(h, r); err != nil {
-		return "", err
+	byt, err := ioutil.ReadAll(r)
+	if err != nil {
+		return "", "", errors.Wrap(err, "read all")
 	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	if _, err := io.Copy(h, bytes.NewReader(byt)); err != nil {
+		return "", "", err
+	}
+	return string(byt), fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 // readdir collects file infos from the migration directory.
@@ -313,4 +345,20 @@ func sortfiles(files []os.FileInfo) error {
 		return fiNum1 < fiNum2
 	})
 	return nameErr
+}
+
+func migrationsFromFiles(m *Migrate) ([]Migration, error) {
+	ms := make([]Migration, len(m.Files))
+	for i, fileInfo := range m.Files {
+		filename := filepath.Join(m.dir, fileInfo.Name())
+		byt, err := ioutil.ReadFile(filename)
+		if err != nil {
+			return nil, errors.Wrap(err, "read file")
+		}
+		ms[i] = Migration{
+			Filename: fileInfo.Name(),
+			Content:  string(byt),
+		}
+	}
+	return ms, nil
 }
