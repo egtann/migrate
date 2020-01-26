@@ -190,25 +190,6 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 		return
 	}
 
-	// Do the same thing for metacheckpoints
-	q = `ALTER TABLE meta ADD COLUMN content TEXT`
-	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "add content column")
-		return
-	}
-	for _, m := range migrations {
-		q = `UPDATE meta SET content=? WHERE filename=?`
-		if _, err = tx.Exec(q, m.Content, m.Filename); err != nil {
-			err = errors.Wrap(err, "update meta content")
-			return
-		}
-	}
-	q = `ALTER TABLE meta MODIFY COLUMN content TEXT NOT NULL`
-	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "update meta content not null")
-		return
-	}
-
 	// Add the content column to metacheckpoints
 	q = `ALTER TABLE metacheckpoints ADD COLUMN content TEXT NOT NULL`
 	if _, err = tx.Exec(q); err != nil {

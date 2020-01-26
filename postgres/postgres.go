@@ -148,3 +148,56 @@ func (db *DB) Open() error {
 	}
 	return nil
 }
+
+// UpgradeToV1 migrates existing meta tables to the v1 format. Complete any
+// migrations before running this function; this will not succeed if have any
+// existing metacheckpoints.
+func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
+	// Begin Tx
+	tx, err := db.Beginx()
+	if err != nil {
+		return errors.Wrap(err, "begin tx")
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+
+	// Remove the uniqueness constraint from md5
+	q := `ALTER TABLE meta MODIFY COLUMN md5 NOT NULL`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "remove md5 unique")
+		return
+	}
+
+	// Add a content column to record the exact migration that ran
+	// alongside the md5, insert the appropriate data, then set not null
+	q = `ALTER TABLE meta ADD COLUMN content TEXT`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "add content column")
+		return
+	}
+	for _, m := range migrations {
+		q = `UPDATE meta SET content=$1 WHERE filename=$2`
+		if _, err = tx.Exec(q, m.Content, m.Filename); err != nil {
+			err = errors.Wrap(err, "update meta content")
+			return
+		}
+	}
+	q = `ALTER TABLE meta MODIFY COLUMN content TEXT NOT NULL`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "update meta content not null")
+		return
+	}
+
+	// Add the content column to metacheckpoints
+	q = `ALTER TABLE metacheckpoints ADD COLUMN content TEXT NOT NULL`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "add metacheckpoints content")
+		return
+	}
+	return nil
+}
