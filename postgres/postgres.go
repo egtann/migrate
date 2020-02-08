@@ -132,14 +132,6 @@ func (db *DB) CreateMetaVersionIfNotExists() (int, error) {
 	return version, nil
 }
 
-func (db *DB) UpdateMetaVersion(version int) error {
-	q := `UPDATE metaversion SET version=$1`
-	if _, err := db.Exec(q, version); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (db *DB) Open() error {
 	var err error
 	db.DB, err = sqlx.Open("postgres", db.connURL)
@@ -197,6 +189,17 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	q = `ALTER TABLE metacheckpoints ADD COLUMN content TEXT NOT NULL`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "add metacheckpoints content")
+		return
+	}
+
+	q = `CREATE TABLE metaversion (version INTEGER)`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "create metaversion table")
+		return
+	}
+	q = `INSERT INTO metaversion (version) VALUES (1)`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "insert metaversion")
 		return
 	}
 	return nil

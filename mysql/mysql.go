@@ -61,14 +61,6 @@ func (db *DB) CreateMetaVersionIfNotExists() (int, error) {
 	return version, nil
 }
 
-func (db *DB) UpdateMetaVersion(version int) error {
-	q := `UPDATE metaversion SET version=?`
-	if _, err := db.Exec(q, version); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (db *DB) CreateMetaIfNotExists() error {
 	q := `CREATE TABLE IF NOT EXISTS meta (
 		filename VARCHAR(255) UNIQUE NOT NULL,
@@ -194,6 +186,17 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	q = `ALTER TABLE metacheckpoints ADD COLUMN content TEXT NOT NULL`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "add metacheckpoints content")
+		return
+	}
+
+	q = `CREATE TABLE metaversion (version INTEGER)`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "create metaversion table")
+		return
+	}
+	q = `INSERT INTO metaversion (version) VALUES (1)`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "insert metaversion")
 		return
 	}
 	return nil

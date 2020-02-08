@@ -21,7 +21,5 @@ type Store interface {
 	InsertMetaCheckpoint(filename, content, checksum string, idx int) error
 	DeleteMetaCheckpoints() error
 
-	UpdateMetaVersion(int) error
-
 	UpgradeToV1([]Migration) error
 }

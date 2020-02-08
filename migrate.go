@@ -88,12 +88,9 @@ func New(
 	if curVersion > version {
 		return nil, errors.New("must upgrade migrate: go get -u github.com/egtann/migrate")
 	}
-	for i := curVersion; i < version; i++ {
+	if curVersion < 1 {
 		if err = db.UpgradeToV1(m.Migrations); err != nil {
 			return nil, errors.Wrap(err, "upgrade to v1")
-		}
-		if err = db.UpdateMetaVersion(i); err != nil {
-			return nil, errors.Wrap(err, "update meta version")
 		}
 	}
 

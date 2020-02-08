@@ -115,14 +115,6 @@ func (db *DB) CreateMetaVersionIfNotExists() (int, error) {
 	return version, nil
 }
 
-func (db *DB) UpdateMetaVersion(version int) error {
-	q := `UPDATE metaversion SET version=$1`
-	if _, err := db.Exec(q, version); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (db *DB) Open() error {
 	var err error
 	db.DB, err = sqlx.Open("sqlite3", db.filepath)
@@ -152,7 +144,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	// Remove the uniqueness constraint from md5. sqlite doesn't support
 	// MODIFY COLUMN so we recreate the table.
 	q := `CREATE TABLE metatmp (
-		filename TEXT NOT NULL,
+		filename TEXT UNIQUE NOT NULL,
 		md5 TEXT NOT NULL,
 		createdat TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`
@@ -162,16 +154,15 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	}
 	q = `INSERT INTO metatmp SELECT filename, md5, createdat FROM meta`
 	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "")
+		err = errors.Wrap(err, "insert metatmp")
 	}
 	q = `DROP TABLE meta`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "drop meta")
-		return
 	}
 	q = `ALTER TABLE metatmp RENAME TO meta`
 	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "rename metatmp")
+		err = errors.Wrap(err, "rename metatmp 1")
 		return
 	}
 
@@ -193,7 +184,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	// Once again, sqlite3 doesn't support modify column, so we have to
 	// recreate our tables
 	q = `CREATE TABLE metatmp (
-		filename TEXT NOT NULL,
+		filename TEXT UNIQUE NOT NULL,
 		content TEXT NOT NULL,
 		md5 TEXT NOT NULL,
 		createdat TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -215,7 +206,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	}
 	q = `ALTER TABLE metatmp RENAME TO meta`
 	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "rename metatmp")
+		err = errors.Wrap(err, "rename metatmp 2")
 		return
 	}
 
@@ -229,23 +220,34 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 		PRIMARY KEY (filename, idx)
 	)`
 	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "create metatmp")
+		err = errors.Wrap(err, "create metacheckpointstmp")
 		return
 	}
 	q = `
 		INSERT INTO metacheckpointstmp
 		SELECT filename, md5, createdat FROM meta`
 	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "")
+		err = errors.Wrap(err, "insert metacheckpointstmp")
 	}
-	q = `DROP TABLE meta`
+	q = `DROP TABLE metacheckpoints`
 	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "drop meta")
+		err = errors.Wrap(err, "drop metacheckpoints")
 		return
 	}
-	q = `ALTER TABLE metatmp RENAME TO meta`
+	q = `ALTER TABLE metacheckpointstmp RENAME TO metacheckpoints`
 	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "rename metatmp")
+		err = errors.Wrap(err, "rename metacheckpointstmp")
+		return
+	}
+
+	q = `CREATE TABLE metaversion (version INTEGER);`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "create metaversion table")
+		return
+	}
+	q = `INSERT INTO metaversion (version) VALUES (1)`
+	if _, err = tx.Exec(q); err != nil {
+		err = errors.Wrap(err, "update metaversion")
 		return
 	}
 	return nil

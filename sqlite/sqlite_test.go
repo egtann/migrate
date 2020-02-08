@@ -13,18 +13,17 @@ const checkpointFile = "2.sql"
 func TestCreateMetaIfNotExists(t *testing.T) {
 	t.Parallel()
 	db := newDB()
-	if err := db.CreateMetaIfNotExists(); err != nil {
-		t.Fatal(err)
-	}
+
+	err := db.CreateMetaIfNotExists()
+	check(t, err)
+
 	var tmp []int
-	if err := db.DB.Select(&tmp, `SELECT 1 FROM meta`); err != nil {
-		t.Fatal(err)
-	}
+	err = db.DB.Select(&tmp, `SELECT 1 FROM meta`)
+	check(t, err)
 }
 
 func TestCreateMetaCheckpointsIfNotExists(t *testing.T) {
 	t.Parallel()
-
 	db := newDB()
 	err := db.CreateMetaCheckpointsIfNotExists()
 	check(t, err)
@@ -112,21 +111,6 @@ func TestDeleteMetaCheckpoints(t *testing.T) {
 	check(t, err)
 	if len(mcs) != 0 {
 		t.Fatal("expected 0 checkpoints")
-	}
-}
-
-func TestUpdateMetaVersion(t *testing.T) {
-	t.Parallel()
-	db := setupDBV1(t)
-
-	const v = 2
-	err := db.UpdateMetaVersion(v)
-	check(t, err)
-
-	version, err := db.CreateMetaVersionIfNotExists()
-	check(t, err)
-	if version != v {
-		t.Fatalf("expected version %d", v)
 	}
 }
 
