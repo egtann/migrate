@@ -28,15 +28,17 @@ which is above all else to guarantee consistent state. At the same time, it's
 possible to write every "down" migration as an "up" migration: simply write the
 migration to be performed as another explicit step in the database's history.
 
-Thus, `migrate` eliminates the concept of directional migrations altogether. With
-`migrate`, every migration is an "up" migration -- every migration moves you
-forward in history, and consistency can always be reached.
+Thus, `migrate` eliminates the concept of directional migrations altogether.
+With `migrate`, every migration is an "up" migration -- every migration moves
+you forward in history, and consistency can always be reached.
 
 ## Install
 
 ```
 go get github.com/egtann/migrate/cmd/migrate
 ```
+
+The current version is v1, and the API is stable.
 
 ## Usage
 
