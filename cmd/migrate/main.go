@@ -35,7 +35,13 @@ func run() error {
 	sslServerName := flag.String("ssl-server", "", "server name for ssl")
 	skip := flag.String("skip", "", "skip up to this filename (inclusive)")
 	pass := flag.String("pass", "", "password (optional flag, if not provided it will be requested)")
+	version := flag.Bool("v", false, "print the version and exit")
 	flag.Parse()
+
+	if *version {
+		fmt.Println("v1.0.0rc1")
+		return nil
+	}
 
 	// Restrict this program to specific files (read-only) and greatly
 	// restrict its possible syscalls
