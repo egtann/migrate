@@ -156,7 +156,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	}()
 
 	// Remove the uniqueness constraint from md5
-	q := `ALTER TABLE meta MODIFY COLUMN md5 NOT NULL`
+	q := `ALTER TABLE meta DROP CONSTRAINT md5`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "remove md5 unique")
 		return
@@ -189,7 +189,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 		return
 	}
 
-	q = `CREATE TABLE metaversion (version INTEGER)`
+	q = `CREATE TABLE metaversion (version INTEGER NOT NULL)`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "create metaversion table")
 		return

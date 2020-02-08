@@ -68,7 +68,7 @@ func (db *DB) GetMigrations() ([]migrate.Migration, error) {
 	q := `
 	SELECT filename, content, md5 AS checksum
 	FROM meta
-	ORDER BY filename * 1`
+	ORDER BY substring(filename, '^\d+')::int`
 	err := db.Select(&migrations, q)
 	return migrations, err
 
@@ -84,7 +84,7 @@ func (db *DB) GetMetaCheckpoints(filename string) ([]string, error) {
 func (db *DB) UpsertMigration(filename, content, checksum string) error {
 	q := `
 		INSERT INTO meta (filename, content, md5) VALUES ($1, $2, $3)
-		ON CONFLICT UPDATE md5=$4, content=$5`
+		ON CONFLICT (filename) DO UPDATE SET md5=$4, content=$5`
 	_, err := db.Exec(q, filename, content, checksum, checksum, content)
 	return err
 }
@@ -159,7 +159,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	}()
 
 	// Remove the uniqueness constraint from md5
-	q := `ALTER TABLE meta MODIFY COLUMN md5 NOT NULL`
+	q := `ALTER TABLE meta DROP CONSTRAINT meta_md5_key`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "remove md5 unique")
 		return
@@ -179,7 +179,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 			return
 		}
 	}
-	q = `ALTER TABLE meta MODIFY COLUMN content TEXT NOT NULL`
+	q = `ALTER TABLE meta ALTER COLUMN content SET NOT NULL`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "update meta content not null")
 		return
@@ -192,7 +192,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 		return
 	}
 
-	q = `CREATE TABLE metaversion (version INTEGER)`
+	q = `CREATE TABLE metaversion (version INTEGER NOT NULL)`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "create metaversion table")
 		return

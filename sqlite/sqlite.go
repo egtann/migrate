@@ -240,7 +240,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 		return
 	}
 
-	q = `CREATE TABLE metaversion (version INTEGER);`
+	q = `CREATE TABLE metaversion (version INTEGER NOT NULL)`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "create metaversion table")
 		return
