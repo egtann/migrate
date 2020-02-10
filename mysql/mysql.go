@@ -156,7 +156,7 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	}()
 
 	// Remove the uniqueness constraint from md5
-	q := `ALTER TABLE meta DROP CONSTRAINT md5`
+	q := `ALTER TABLE meta DROP INDEX md5`
 	if _, err = tx.Exec(q); err != nil {
 		err = errors.Wrap(err, "remove md5 unique")
 		return
