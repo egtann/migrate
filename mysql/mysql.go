@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"github.com/egtann/migrate"
 	"github.com/go-sql-driver/mysql"
@@ -185,10 +186,14 @@ func (db *DB) UpgradeToV1(migrations []migrate.Migration) (err error) {
 	// Add the content column to metacheckpoints
 	q = `
 	ALTER TABLE metacheckpoints
-	ADD COLUMN IF NOT EXISTS content TEXT NOT NULL`
-	if _, err = tx.Exec(q); err != nil {
-		err = errors.Wrap(err, "add metacheckpoints content")
-		return
+	ADD COLUMN content TEXT NOT NULL`
+	_, err = tx.Exec(q)
+	if err != nil {
+		// Ignore duplicate column errors
+		if !strings.Contains(err.Error(), "Duplicate column name") {
+			err = errors.Wrap(err, "add metacheckpoints content")
+			return
+		}
 	}
 
 	q = `
