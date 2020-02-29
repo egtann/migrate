@@ -35,6 +35,7 @@ func run() error {
 	sslServerName := flag.String("ssl-server", "", "server name for ssl")
 	skip := flag.String("skip", "", "skip up to this filename (inclusive)")
 	pass := flag.String("pass", "", "password (optional flag, if not provided it will be requested)")
+	variation := flag.String("variation", "", "variation for migration workarounds")
 	version := flag.Bool("v", false, "print the version and exit")
 	flag.Parse()
 
@@ -147,7 +148,8 @@ func run() error {
 	}
 
 	// Prepare our database for migrations and collect the relevant files.
-	m, err := migrate.New(db, migrate.StdLogger{}, *migrationDir, *skip)
+	m, err := migrate.New(db, migrate.StdLogger{}, *migrationDir, *skip,
+		*variation)
 	if err != nil {
 		return err
 	}

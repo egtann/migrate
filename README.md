@@ -75,6 +75,42 @@ Adding `-skip` will populate the `meta` table with the history to that point,
 and then run all migrations beyond that point. You only need to pass the
 `-skip` flag one time per database.
 
+## Similar-but-not-quite
+
+Annoyingly, MariaDB, MySQL 5.7, and MySQL 8 do not handle all migrations
+equally. For instance, `FOREIGN KEY name ...` migrates successfully in some
+versions, but in others the name is silently ignored unless you use
+`CONSTRAINT`.
+
+Sometimes these things slip through, and the exact version of your production
+database may not be available in all developer environments. Rather than doing
+dangerous migrations by-hand to fix these consistency issues, you can add your
+DB to your migration filenames like so: `{name}.{variation}.sql`, with a
+special hack for your database. For instance:
+
+```
+$ ls migrations
+1_add_foreign_key.sql
+2_remove_foreign_key.sql
+2_remove_foreign_key.mariadb-10.sql
+
+$ migrate                        # by default runs .sql files, ignores mariadb-10
+$ migrate -variation mariadb-10  # prefers .mariadb-10.sql files when available
+```
+
+Here we set mariadb-10 as the variation, but it can be any arbitrary string.
+
+This is of course dangerous and should be used sparingly. If at all possible
+the migrations should be fixed in a future migration, and consistency should be
+manually verified.
+
+When developing locally with a database that differs from production, it helps
+to add an alias, such as:
+
+```
+alias migrate="migrate -type mysql -variation mariadb-10"
+```
+
 ## Known limitations
 
 The following features are not available yet but will be added:

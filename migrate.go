@@ -40,17 +40,18 @@ var regexNum = regexp.MustCompile(`^\d+`)
 func New(
 	db Store,
 	log Logger,
-	dir, skip string,
+	dir, skip, variation string,
 ) (*Migrate, error) {
 	m := &Migrate{db: db, log: log, dir: dir}
 
 	// Get files in migration dir and sort them
 	var err error
-	m.Files, err = readdir(dir)
+	m.Files, err = readDir(dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "get migrations")
 	}
-	if err = sortfiles(m.Files); err != nil {
+	m.Files = filterVariation(m.Files, variation)
+	if err = sortFiles(m.Files); err != nil {
 		return nil, errors.Wrap(err, "sort")
 	}
 
@@ -294,8 +295,8 @@ func computeChecksum(r io.Reader) (content string, checksum string, err error) {
 	return string(byt), fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// readdir collects file infos from the migration directory.
-func readdir(dir string) ([]os.FileInfo, error) {
+// readDir collects file infos from the migration directory.
+func readDir(dir string) ([]os.FileInfo, error) {
 	files := []os.FileInfo{}
 	tmp, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -306,11 +307,11 @@ func readdir(dir string) ([]os.FileInfo, error) {
 		if fi.IsDir() || strings.HasPrefix(fi.Name(), ".") {
 			continue
 		}
+
 		// Skip any non-sql files
 		if filepath.Ext(fi.Name()) != ".sql" {
 			continue
 		}
-		files = append(files, fi)
 	}
 	if len(files) == 0 {
 		return nil, errors.New("no sql migration files found (might be the wrong -dir)")
@@ -318,9 +319,9 @@ func readdir(dir string) ([]os.FileInfo, error) {
 	return files, nil
 }
 
-// sortfiles by name, ensuring that something like 1.sql, 2.sql, 10.sql is
+// sortFiles by name, ensuring that something like 1.sql, 2.sql, 10.sql is
 // ordered correctly.
-func sortfiles(files []os.FileInfo) error {
+func sortFiles(files []os.FileInfo) error {
 	var nameErr error
 	sort.Slice(files, func(i, j int) bool {
 		if nameErr != nil {
@@ -361,4 +362,46 @@ func migrationsFromFiles(m *Migrate) ([]Migration, error) {
 		}
 	}
 	return ms, nil
+}
+
+func filterVariation(files []os.FileInfo, variation string) []os.FileInfo {
+	variation = fmt.Sprint(".", variation, ".sql")
+	stripExt := func(s string) string {
+		// Remove both .sql and .{variation}.sql
+		s = strings.TrimSuffix(s, filepath.Ext(s))
+		sNew := strings.TrimSuffix(s, filepath.Ext(s))
+		return s
+	}
+
+	// Each file, stripped of its extension, gets its own "preferred"
+	// version to run, based on whether or not a version matches the
+	// provided variation.
+	//
+	// TODO(egtann) COMPLETE THIS
+	preferred := map[string]string{}
+	for _, f := range files {
+		preferred
+		base := stripExt(f.Name())
+		preferred[base] = f.Name()
+		if hasVariation {
+			variations[base] = struct{}{}
+		}
+	}
+
+	// If the file exists with the variation, prefer that version
+	var filtered []os.FileInfo
+	for _, f := range files {
+		name := f.Name()
+
+		// If there's no variation specified, then only include .sql
+		// files.
+		base := stripExt(name)
+
+		if _, ok := variations[base]; !ok {
+			// It has no variation
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+	return filtered
 }
